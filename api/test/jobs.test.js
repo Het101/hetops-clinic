@@ -34,3 +34,33 @@ test('report upserts one row per tenant', async () => {
   assert.equal(queries.length, 2);
   assert.match(queries[0], /on conflict \(day\) do update/);
 });
+
+function failingSetup(badSlug) {
+  const queries = [];
+  const db = {
+    listTenants: async () => [{ slug: 'riverside' }, { slug: badSlug }, { slug: 'lakeview' }],
+    tenant: async (slug) => ({
+      query: async (sql) => {
+        queries.push(slug);
+        if (slug === badSlug) throw new Error('boom');
+        return { rowCount: 2 };
+      },
+    }),
+  };
+  const lines = [];
+  const log = { info: (obj, msg) => lines.push({ ...obj, msg }), error: (obj, msg) => lines.push({ ...obj, msg }) };
+  return { db, log, queries, lines };
+}
+
+test('reminders continue past a failing tenant and count only the successes', async () => {
+  const { db, log, queries, lines } = failingSetup('lakeview-broken');
+  assert.equal(await runReminders(db, log), 4);
+  assert.deepEqual(queries, ['riverside', 'lakeview-broken', 'lakeview']);
+  assert.ok(lines.some((l) => l.tenant === 'lakeview-broken' && l.msg === 'reminders failed for tenant'));
+});
+
+test('report rejects after finishing the healthy tenants', async () => {
+  const { db, log, queries } = failingSetup('lakeview-broken');
+  await assert.rejects(runReport(db, log), /report failed for: lakeview-broken/);
+  assert.deepEqual(queries, ['riverside', 'lakeview-broken', 'lakeview']);
+});

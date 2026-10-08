@@ -8,12 +8,17 @@ import { createDb } from './db.js';
 export async function runReminders(db, log) {
   let total = 0;
   for (const t of await db.listTenants()) {
-    const pool = await db.tenant(t.slug);
-    const { rowCount } = await pool.query(
-      "update appointments set reminded = true where not reminded and at < now() + interval '1 hour'",
-    );
-    if (rowCount) log.info({ tenant: t.slug, reminded: rowCount }, 'reminders sent');
-    total += rowCount;
+    try {
+      const pool = await db.tenant(t.slug);
+      const { rowCount } = await pool.query(
+        "update appointments set reminded = true where not reminded and at < now() + interval '1 hour'",
+      );
+      if (rowCount) log.info({ tenant: t.slug, reminded: rowCount }, 'reminders sent');
+      total += rowCount;
+    } catch (err) {
+      // One broken clinic must not starve the others.
+      log.error({ tenant: t.slug, err: err.message }, 'reminders failed for tenant');
+    }
   }
   return total;
 }
@@ -25,15 +30,23 @@ export function startJobs({ db, log, everyMs = 60000 }) {
 }
 
 export async function runReport(db, log) {
+  const failed = [];
   for (const t of await db.listTenants()) {
-    const pool = await db.tenant(t.slug);
-    await pool.query(
-      `insert into reports (day, appointments)
-       select current_date, count(*) from appointments
-       on conflict (day) do update set appointments = excluded.appointments`,
-    );
-    log.info({ tenant: t.slug }, 'nightly report written');
+    try {
+      const pool = await db.tenant(t.slug);
+      await pool.query(
+        `insert into reports (day, appointments)
+         select current_date, count(*) from appointments
+         on conflict (day) do update set appointments = excluded.appointments`,
+      );
+      log.info({ tenant: t.slug }, 'nightly report written');
+    } catch (err) {
+      failed.push(t.slug);
+      log.error({ tenant: t.slug, err: err.message }, 'nightly report failed for tenant');
+    }
   }
+  // Healthy tenants are already written; throw so the CLI exits 1 and the CronJob shows the failure.
+  if (failed.length) throw new Error(`report failed for: ${failed.join(', ')}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && process.argv[2] === 'report') {
