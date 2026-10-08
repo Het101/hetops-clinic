@@ -26,6 +26,7 @@ async function whoami() {
   try {
     const w = await api('/api/whoami');
     $('pod').textContent = `Served by ${w.pod} · ${w.version}`;
+    if ($('clinic').options.length === 0) await loadClinics(); // page opened mid-outage: recover once the API is back
   } catch {
     $('pod').textContent = DOWN;
   }
