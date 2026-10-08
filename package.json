@@ -1,0 +1,18 @@
+{
+  "name": "hetops-clinic",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node api/src/server.js",
+    "migrate": "node api/src/migrate.js",
+    "report": "node api/src/jobs.js report",
+    "test": "node --test \"api/test/*.test.js\""
+  },
+  "dependencies": {
+    "fastify": "^5.12.5",
+    "pg": "^8.23.1"
+  }
+}
