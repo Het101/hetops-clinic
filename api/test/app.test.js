@@ -85,3 +85,55 @@ test('tokenOk compares exactly', () => {
   assert.equal(tokenOk(undefined, 'tok'), false);
   assert.equal(tokenOk('', ''), false);
 });
+
+const fakePool = () => {
+  const queries = [];
+  return {
+    queries,
+    query: async (sql, params) => {
+      queries.push({ sql, params });
+      if (sql.startsWith('insert')) return { rows: [{ id: 1, patient: params[0], at: params[1], reminded: false }] };
+      return { rows: [{ id: 1, patient: 'Ana', at: '2026-10-09T10:00:00.000Z', reminded: false }] };
+    },
+  };
+};
+
+test('appointments: unknown clinic is 404', async () => {
+  const res = await app().inject('/api/clinics/nowhere/appointments');
+  assert.equal(res.statusCode, 404);
+});
+
+test('appointments: lists from the tenant database', async () => {
+  const pool = fakePool();
+  const res = await app({ db: fakeDb({ tenant: async (slug) => (slug === 'riverside' ? pool : null) }) })
+    .inject('/api/clinics/riverside/appointments');
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json()[0].patient, 'Ana');
+  assert.match(pool.queries[0].sql, /from appointments/);
+});
+
+test('appointments: creates and trims to the newest 200', async () => {
+  const pool = fakePool();
+  const res = await app({ db: fakeDb({ tenant: async () => pool }) }).inject({
+    method: 'POST', url: '/api/clinics/riverside/appointments',
+    payload: { patient: 'Ben', at: '2026-10-09T11:00:00Z' },
+  });
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.json().patient, 'Ben');
+  assert.match(pool.queries[1].sql, /limit 200/);
+});
+
+test('appointments: rejects bad input', async () => {
+  const a = app({ db: fakeDb({ tenant: async () => fakePool() }) });
+  for (const payload of [{}, { patient: '', at: '2026-10-09T11:00:00Z' }, { patient: 'x', at: 'tomorrow' },
+    { patient: 'x'.repeat(81), at: '2026-10-09T11:00:00Z' }, { patient: 'x', at: '2026-10-09T11:00:00Z', extra: 1 }]) {
+    const res = await a.inject({ method: 'POST', url: '/api/clinics/riverside/appointments', payload });
+    assert.equal(res.statusCode, 400, JSON.stringify(payload));
+  }
+});
+
+test('work burns CPU and returns a short hash', async () => {
+  const res = await app().inject('/api/work');
+  assert.equal(res.statusCode, 200);
+  assert.match(res.json().hash, /^[0-9a-f]{12}$/);
+});
