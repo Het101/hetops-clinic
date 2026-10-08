@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clinic bookings demo</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Clinic bookings</h1>
+    <p class="note">Demo app for the HetOps Kubernetes chaos lab. Every name and booking here is fake.</p>
+    <label>Clinic <select id="clinic"></select></label>
+    <form id="book">
+      <input id="patient" placeholder="Patient name" maxlength="80" required>
+      <input id="at" type="datetime-local" required>
+      <button type="submit">Book</button>
+    </form>
+    <ul id="list"></ul>
+    <p class="pod" id="pod" aria-live="polite">Connecting...</p>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
