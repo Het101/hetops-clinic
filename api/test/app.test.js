@@ -137,3 +137,22 @@ test('work burns CPU and returns a short hash', async () => {
   assert.equal(res.statusCode, 200);
   assert.match(res.json().hash, /^[0-9a-f]{12}$/);
 });
+
+test('5xx responses never echo internal error text; 4xx keep their message', async () => {
+  const a = app({ db: fakeDb({ listTenants: async () => { throw new Error('connect ECONNREFUSED 10.96.0.12:5432'); } }) });
+  const res = await a.inject('/api/clinics');
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(res.json(), { error: 'internal' });
+  assert.ok(!res.body.includes('ECONNREFUSED'));
+  const v = app({ db: fakeDb({ tenant: async () => fakePool() }) });
+  const bad = await v.inject({ method: 'POST', url: '/api/clinics/riverside/appointments', payload: {} });
+  assert.equal(bad.statusCode, 400);
+});
+
+test('appointments: rejects years outside 2000-2099', async () => {
+  const a = app({ db: fakeDb({ tenant: async () => fakePool() }) });
+  for (const at of ['0000-01-01T00:00:00Z', '2101-01-01T00:00:00Z']) {
+    const res = await a.inject({ method: 'POST', url: '/api/clinics/riverside/appointments', payload: { patient: 'x', at } });
+    assert.equal(res.statusCode, 400, at);
+  }
+});

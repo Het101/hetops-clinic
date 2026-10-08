@@ -25,6 +25,15 @@ export function tokenOk(given, expected) {
 export function buildApp({ config, db, actions = defaultActions, logger = true }) {
   const app = Fastify({ logger });
 
+  // Public site: never echo internal error text (DB hosts, users) in 5xx responses.
+  app.setErrorHandler((err, req, reply) => {
+    if ((err.statusCode ?? 500) >= 500) {
+      req.log.error({ err: err.message }, 'request failed');
+      return reply.code(500).send({ error: 'internal' });
+    }
+    return reply.send(err); // 4xx (e.g. validation) keep Fastify's message
+  });
+
   app.get('/healthz', async () => ({ ok: true }));
 
   // Readiness checks the admin database only: one tenant database failing must not pull every pod out of service.
@@ -62,7 +71,7 @@ export function buildApp({ config, db, actions = defaultActions, logger = true }
         additionalProperties: false,
         properties: {
           patient: { type: 'string', minLength: 1, maxLength: 80 },
-          at: { type: 'string', format: 'date-time' },
+          at: { type: 'string', format: 'date-time', pattern: '^20[0-9]{2}-' },
         },
       },
     },
