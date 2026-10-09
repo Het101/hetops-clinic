@@ -12,6 +12,7 @@ const fakeDb = (over = {}) => ({
   listTenants: async () => [{ slug: 'riverside', name: 'Riverside Family Clinic', db_name: 'clinic_riverside' }],
   tenant: async () => null,
   close: async () => {},
+  poolStats: () => ({ total: 4, idle: 3, waiting: 0 }),
   ...over,
 });
 const app = (opts = {}) => buildApp({ config: config(), db: fakeDb(), logger: false, ...opts });
@@ -163,4 +164,40 @@ test('every response says which pod sent it, errors included', async () => {
   const failing = await app({ db: fakeDb({ listTenants: async () => { throw new Error('db down'); } }) }).inject('/api/whoami');
   assert.equal(failing.statusCode, 500);
   assert.equal(failing.headers['x-pod'], config().pod);
+});
+
+test('metrics exposes the request histogram after a request', async () => {
+  const a = app();
+  await a.inject('/api/whoami');
+  await new Promise(setImmediate); // onResponse runs just after inject resolves
+  const res = await a.inject('/metrics');
+  assert.equal(res.statusCode, 200);
+  assert.match(res.headers['content-type'], /^text\/plain/);
+  assert.ok(res.body.includes('http_request_duration_seconds_bucket{'));
+  assert.ok(res.body.includes('route="/api/whoami"'));
+});
+
+test('metrics route label is the template, not the raw path', async () => {
+  const a = app();
+  await a.inject('/api/clinics/riverside-123/appointments');
+  await new Promise(setImmediate);
+  const { body } = await a.inject('/metrics');
+  assert.ok(body.includes('route="/api/clinics/:slug/appointments"'));
+  assert.ok(!body.includes('riverside-123'));
+});
+
+test('metrics reports admin pool gauge from db.poolStats at scrape time', async () => {
+  const { body } = await app().inject('/metrics');
+  for (const line of ['total"} 4', 'idle"} 3', 'waiting"} 0']) {
+    assert.ok(body.includes(`clinic_db_pool_connections{state="${line}`), line);
+  }
+});
+
+test('metrics requests are not counted in the histogram', async () => {
+  const a = app();
+  await a.inject('/api/whoami');
+  await a.inject('/metrics');
+  await new Promise(setImmediate);
+  const { body } = await a.inject('/metrics');
+  assert.ok(!body.includes('route="/metrics"'));
 });
