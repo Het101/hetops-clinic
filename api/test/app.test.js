@@ -156,3 +156,11 @@ test('appointments: rejects years outside 2000-2099', async () => {
     assert.equal(res.statusCode, 400, at);
   }
 });
+
+test('every response says which pod sent it, errors included', async () => {
+  const ok = await app().inject('/healthz');
+  assert.equal(ok.headers['x-pod'], config().pod);
+  const failing = await app({ db: fakeDb({ listTenants: async () => { throw new Error('db down'); } }) }).inject('/api/whoami');
+  assert.equal(failing.statusCode, 500);
+  assert.equal(failing.headers['x-pod'], config().pod);
+});
