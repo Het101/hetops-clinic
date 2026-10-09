@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
+import { createMetrics } from './metrics.js';
 
 const strictAjv = addFormats(new Ajv({ allErrors: true, removeAdditional: false }));
 
@@ -26,6 +27,14 @@ export function buildApp({ config, db, actions = defaultActions, logger = true }
   const app = Fastify({ logger });
   // Which pod answered, on every response (errors too): the lab console draws each visit landing on it.
   app.addHook('onSend', async (req, reply) => { reply.header('x-pod', config.pod); });
+
+  const { register, duration } = createMetrics(db);
+  app.addHook('onResponse', async (req, reply) => {
+    const route = req.routeOptions?.url;
+    if (route === '/metrics') return;
+    duration.observe({ method: req.method, route: route ?? 'unmatched', status: reply.statusCode }, reply.elapsedTime / 1000);
+  });
+  app.get('/metrics', async (req, reply) => reply.type(register.contentType).send(await register.metrics()));
 
   // Public site: never echo internal error text (DB hosts, users) in 5xx responses.
   app.setErrorHandler((err, req, reply) => {

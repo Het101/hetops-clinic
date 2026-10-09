@@ -22,6 +22,7 @@ export function createDb(cfg, onPoolError = defaultPoolError) {
   const tenantPools = new Map();
 
   return {
+    poolStats: () => ({ total: admin.totalCount, idle: admin.idleCount, waiting: admin.waitingCount }),
     async ping() {
       await admin.query('select 1');
     },
