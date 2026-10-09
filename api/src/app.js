@@ -24,6 +24,8 @@ export function tokenOk(given, expected) {
 
 export function buildApp({ config, db, actions = defaultActions, logger = true }) {
   const app = Fastify({ logger });
+  // Which pod answered, on every response (errors too): the lab console draws each visit landing on it.
+  app.addHook('onSend', async (req, reply) => { reply.header('x-pod', config.pod); });
 
   // Public site: never echo internal error text (DB hosts, users) in 5xx responses.
   app.setErrorHandler((err, req, reply) => {
