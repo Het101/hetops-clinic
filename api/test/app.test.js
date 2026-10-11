@@ -201,3 +201,17 @@ test('metrics requests are not counted in the histogram', async () => {
   const { body } = await a.inject('/metrics');
   assert.ok(!body.includes('route="/metrics"'));
 });
+
+test('one log line per request, carrying method, url, status and time', async () => {
+  const lines = [];
+  const stream = { write: (s) => lines.push(JSON.parse(s)) };
+  const a = buildApp({ config: config(), db: fakeDb(), logger: { stream } });
+  await a.inject('/api/clinics');
+  const reqLines = lines.filter((l) => l.reqId);
+  assert.equal(reqLines.length, 1);
+  assert.equal(reqLines[0].msg, 'request completed');
+  assert.equal(reqLines[0].req.method, 'GET');
+  assert.equal(reqLines[0].req.url, '/api/clinics');
+  assert.equal(reqLines[0].res.statusCode, 200);
+  assert.equal(typeof reqLines[0].responseTime, 'number');
+});
