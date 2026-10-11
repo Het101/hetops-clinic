@@ -24,7 +24,8 @@ export function tokenOk(given, expected) {
 }
 
 export function buildApp({ config, db, actions = defaultActions, logger = true }) {
-  const app = Fastify({ logger });
+  // Fastify logs two lines per request by default ("incoming request" + "request completed"); one is enough (ELK E3).
+  const app = Fastify({ logger, disableRequestLogging: true });
   // Which pod answered, on every response (errors too): the lab console draws each visit landing on it.
   app.addHook('onSend', async (req, reply) => { reply.header('x-pod', config.pod); });
 
@@ -32,6 +33,7 @@ export function buildApp({ config, db, actions = defaultActions, logger = true }
   app.addHook('onResponse', async (req, reply) => {
     const route = req.routeOptions?.url;
     if (route === '/metrics') return;
+    req.log.info({ req: { method: req.method, url: req.url }, res: { statusCode: reply.statusCode }, responseTime: reply.elapsedTime }, 'request completed');
     duration.observe({ method: req.method, route: route ?? 'unmatched', status: reply.statusCode }, reply.elapsedTime / 1000);
   });
   app.get('/metrics', async (req, reply) => reply.type(register.contentType).send(await register.metrics()));
